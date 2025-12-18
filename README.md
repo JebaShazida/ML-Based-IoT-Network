@@ -1,0 +1,1 @@
+Random Forest–based intrusion detection on an IoT gateway log dataset (log.csv), including data loading, feature importance selection, cross-validation, train/test evaluation, and visualisations (class distribution, feature plots, confusion matrix, metrics).
