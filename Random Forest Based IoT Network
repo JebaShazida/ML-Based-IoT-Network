@@ -1,0 +1,142 @@
+from google.colab import files
+uploaded = files.upload()
+import pandas as pd
+import numpy as np
+import matplotlib.pyplot as plt
+
+from sklearn.model_selection import train_test_split, cross_val_score
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.metrics import (
+    classification_report,
+    confusion_matrix,
+    ConfusionMatrixDisplay,
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+)
+
+plt.style.use("default")
+plt.style.use("default") 
+df = pd.read_csv("log.csv")
+print("Shape:", df.shape)
+print("First 5 columns:", df.columns[:5].tolist())
+print("Last 5 columns:", df.columns[-5:].tolist())
+print("\nHead:")
+print(df.head())
+df["label"] = (df["class_name"] == 1).astype(int)
+
+print("\nLabel value counts (0 = benign, 1 = attack):")
+print(df["label"].value_counts())
+feature_cols_all = df.columns.difference(["class_name", "label"])
+desc = df[feature_cols_all].describe().T
+
+print("\nFeature summary (first 5 rows):")
+print(desc.head())
+counts = df["label"].value_counts().sort_index()
+labels = ["Benign (0)", "Attack (1)"]
+
+plt.figure(figsize=(4, 4))
+plt.bar(labels, counts)
+plt.title("Class distribution")
+plt.ylabel("Number of samples")
+plt.show()
+means_by_class = df.groupby("label")[feature_cols_all].mean()
+diff = (means_by_class.loc[1] - means_by_class.loc[0]).abs().sort_values(ascending=False)
+top_diff_features = diff.head(5).index.tolist()
+
+print("\nTop 5 features with largest mean difference between classes:")
+print(top_diff_features)
+
+for col in top_diff_features:
+    plt.figure(figsize=(5, 3))
+    plt.hist(df[df["label"] == 0][col], alpha=0.6, label="Benign", bins=20)
+    plt.hist(df[df["label"] == 1][col], alpha=0.6, label="Attack", bins=20)
+    plt.title(f"Feature distribution: {col}")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+X_full = df[feature_cols_all].copy()
+y = df["label"].copy()
+base_rf = RandomForestClassifier(
+    n_estimators=500,
+    random_state=42,
+    class_weight="balanced",
+    n_jobs=-1,
+)
+base_rf.fit(X_full, y)
+
+importances = base_rf.feature_importances_
+indices = np.argsort(importances)[::-1]
+
+TOP_K = 50
+top_features = X_full.columns[indices[:TOP_K]]
+
+print("\nNumber of selected features:", len(top_features))
+print("Selected feature names:", top_features.tolist())
+
+X_sel = X_full[top_features]
+top10_idx = indices[:10]
+top10_names = X_full.columns[top10_idx]
+top10_imp = importances[top10_idx]
+
+plt.figure(figsize=(6, 4))
+plt.barh(top10_names[::-1], top10_imp[::-1])
+plt.xlabel("Importance")
+plt.title("Top 10 Random Forest feature importances")
+plt.tight_layout()
+plt.show()
+rf_sel = RandomForestClassifier(
+    n_estimators=500,
+    random_state=42,
+    class_weight="balanced",
+    n_jobs=-1,
+)
+
+cv_scores = cross_val_score(rf_sel, X_sel, y, cv=5, scoring="accuracy")
+print("\nCross-validation accuracies:", cv_scores)
+print("Mean CV accuracy:", cv_scores.mean())
+print("Std of CV accuracy:", cv_scores.std())
+X_train, X_test, y_train, y_test = train_test_split(
+    X_sel,
+    y,
+    test_size=0.2,
+    random_state=0,
+    stratify=y,
+)
+
+print("\nTrain shape:", X_train.shape)
+print("Test shape:", X_test.shape)
+rf_final = RandomForestClassifier(
+    n_estimators=500,
+    random_state=42,
+    class_weight="balanced",
+    n_jobs=-1,
+)
+
+rf_final.fit(X_train, y_train)
+y_pred = rf_final.predict(X_test)
+print("\nTest accuracy:", accuracy_score(y_test, y_pred))
+print("\nClassification report (0 = benign, 1 = attack):\n")
+print(classification_report(y_test, y_pred, digits=4))
+cm = confusion_matrix(y_test, y_pred)
+disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["Benign", "Attack"])
+
+plt.figure(figsize=(4, 4))
+disp.plot(values_format="d")
+plt.title("Confusion matrix - Random Forest (top features)")
+plt.show()
+acc = accuracy_score(y_test, y_pred)
+prec = precision_score(y_test, y_pred, zero_division=0)
+rec = recall_score(y_test, y_pred, zero_division=0)
+f1 = f1_score(y_test, y_pred, zero_division=0)
+
+metrics = {"accuracy": acc, "precision": prec, "recall": rec, "f1": f1}
+print("\nMetrics:", metrics)
+
+plt.figure(figsize=(5, 3))
+plt.bar(list(metrics.keys()), list(metrics.values()))
+plt.ylim(0, 1)
+plt.title("Random Forest performance (top features)")
+plt.ylabel("Score")
+plt.show()
